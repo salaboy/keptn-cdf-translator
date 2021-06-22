@@ -112,8 +112,9 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
 	eventContext, err2 := apiHandler.SendEvent(apiEvent)
 	if err2 != nil {
 		fmt.Errorf("trigger delivery was unsuccessful. %s", *err2.Message)
+		return
 	}
-
-	fmt.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
-
+	if eventContext != nil {
+		fmt.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
+	}
 }

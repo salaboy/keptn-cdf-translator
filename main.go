@@ -2,32 +2,31 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
+	"net/http"
+	"os"
+
 	"github.com/cdfoundation/sig-events/cde/sdk/go/pkg/cdf/events"
 	cdeextensions "github.com/cdfoundation/sig-events/cde/sdk/go/pkg/cdf/events/extensions"
 	"github.com/cloudevents/sdk-go/v2/binding"
 	cehttp "github.com/cloudevents/sdk-go/v2/protocol/http"
 	"github.com/gorilla/mux"
 	"github.com/salaboy/keptn-cdf-translator/pkg/handlers"
-	"log"
-	"net/http"
-	"os"
 )
 
-var KEPTN_ENDPOINT = os.Getenv("KEPTN_ENDPOINT")
-var KEPTN_API_TOKEN = os.Getenv("KEPTN_API_TOKEN")
+var (
+	KEPTN_ENDPOINT = os.Getenv("KEPTN_ENDPOINT")
+	KEPTN_API_TOKEN = os.Getenv("KEPTN_API_TOKEN")
 
-
-// To get the API Token you need to run: KEPTN_API_TOKEN=$(kubectl get secret keptn-api-token -n keptn -ojsonpath={.data.keptn-api-token} | base64 --decode)
-var registry = handlers.CDEventHandlerRegistry{}
-var artifactExtension = cdeextensions.ArtifactExtension{}
+	// To get the API Token you need to run: KEPTN_API_TOKEN=$(kubectl get secret keptn-api-token -n keptn -ojsonpath={.data.keptn-api-token} | base64 --decode)
+	registry = handlers.CDEventHandlerRegistry{}
+	artifactExtension = cdeextensions.ArtifactExtension{}
+)
 
 func main() {
-
 	if  KEPTN_ENDPOINT == "" {
 		KEPTN_ENDPOINT = "http://localhost:8080/api/"
 	}
-
 
 	registry.Sink = KEPTN_ENDPOINT
 	registry.KeptnApiToken = KEPTN_API_TOKEN
@@ -44,20 +43,19 @@ func main() {
 
 	http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(":8081", nil))
-
-
-
-
 }
 
 func EventsHandler(writer http.ResponseWriter, request *http.Request) {
 
+	log.Printf("Got an request")
 
 	ctx := context.Background()
 	message := cehttp.NewMessageFromHttpRequest(request)
+	log.Printf("Got an message %q", message.Header)
+
 	event, _ := binding.ToEvent(ctx, message, artifactExtension.ReadTransformer(), artifactExtension.WriteTransformer())
 
-	fmt.Printf("Got an Event: %s", event)
+	log.Printf("Got an Event: %s", event)
 
 	registry.HandleEvent(event)
 
