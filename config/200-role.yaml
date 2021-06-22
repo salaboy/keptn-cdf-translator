@@ -1,0 +1,17 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: keptn-token-reader
+  namespace: keptn
+  labels:
+    app.kubernetes.io/component: keptn-cdevents-translator
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: keptn-cdevents
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["keptn-api-token"]
