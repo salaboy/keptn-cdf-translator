@@ -47,15 +47,13 @@ func main() {
 
 func EventsHandler(writer http.ResponseWriter, request *http.Request) {
 
-	log.Printf("Got an request")
-
 	ctx := context.Background()
 	message := cehttp.NewMessageFromHttpRequest(request)
 	log.Printf("Got an message %q", message.Header)
 
 	event, _ := binding.ToEvent(ctx, message, artifactExtension.ReadTransformer(), artifactExtension.WriteTransformer())
 
-	log.Printf("Got an Event: %s", event)
+	log.Printf("Got an Event: %s", event.Type())
 
 	registry.HandleEvent(event)
 

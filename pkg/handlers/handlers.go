@@ -105,9 +105,11 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
 		fmt.Errorf("Failed to map cloud event to API event model. %v", err)
 	}
 
+	fmt.Printf("apiEvent: %q \n", apiEvent)
 	endPoint, _ := url.Parse(n.Sink)
 
 	apiHandler := apiutils.NewAuthenticatedAPIHandler(endPoint.String(), n.KetnApiToken, "x-token", nil, endPoint.Scheme)
+	fmt.Printf("apiHandler: %q \n", apiHandler)
 
 	eventContext, err2 := apiHandler.SendEvent(apiEvent)
 	if err2 != nil {

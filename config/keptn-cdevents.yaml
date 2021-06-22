@@ -57,4 +57,4 @@ spec:
               name: keptn-api-token
               key: keptn-api-token
         - name: KEPTN_ENDPOINT
-          value: http://api-gateway-nginx.keptn/
+          value: http://api-service.keptn:8080
