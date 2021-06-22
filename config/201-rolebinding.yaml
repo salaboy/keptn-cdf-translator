@@ -1,0 +1,17 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keptn-cdevents-keptn-token-reader
+  namespace: keptn
+  labels:
+    app.kubernetes.io/component: keptn-cdevents-translator
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: keptn-cdevents
+subjects:
+  - kind: ServiceAccount
+    name: keptn-cdevents
+    namespace: keptn
+roleRef:
+  kind: Role
+  name: keptn-token-reader
+  apiGroup: rbac.authorization.k8s.io

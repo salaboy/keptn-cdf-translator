@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: keptn-cdevents
+  namespace: keptn
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8081
+  selector:
+    app.kubernetes.io/name: keptn-cdevents-translator
+    app.kubernetes.io/component: keptn-cdevents-translator
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: keptn-cdevents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keptn-cdevents
+  namespace: keptn
+  labels:
+    app.kubernetes.io/name: keptn-cdevents-translator
+    app.kubernetes.io/component: keptn-cdevents-translator
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: keptn-cdevents
+    app.kubernetes.io/version: devel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keptn-cdevents-translator
+      app.kubernetes.io/component: keptn-cdevents-translator
+      app.kubernetes.io/instance: default
+      app.kubernetes.io/part-of: keptn-cdevents
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+      labels:
+        app.kubernetes.io/name: keptn-cdevents-translator
+        app.kubernetes.io/component: keptn-cdevents-translator
+        app.kubernetes.io/instance: default
+        app.kubernetes.io/part-of: keptn-cdevents
+        app.kubernetes.io/version: devel
+        app: keptn-cdevents
+    spec:
+      serviceAccountName: keptn-cdevents
+      containers:
+      - name: keptn-cdevents-translate
+        image: ko://github.com/salaboy/keptn-cdf-translator
+        env:
+        - name: KEPTN_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: keptn-api-token
+              key: keptn-api-token
+        - name: KEPTN_ENDPOINT
+          value: http://api-gateway-nginx.keptn/
