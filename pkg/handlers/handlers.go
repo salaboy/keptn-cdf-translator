@@ -76,7 +76,7 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
 		},
 		ConfigurationChange: keptnv2.ConfigurationChange{
 			Values: map[string]interface{}{
-				"image": "docker.io/salaboy/" + artifactExtension.ArtifactName + ":" + artifactExtension.ArtifactVersion,
+				"image": artifactExtension.ArtifactId,
 			},
 		},
 	}
