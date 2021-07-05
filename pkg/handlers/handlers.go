@@ -6,23 +6,19 @@ import (
 	cdeextensions "github.com/cdfoundation/sig-events/cde/sdk/go/pkg/cdf/events/extensions"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/cloudevents/sdk-go/v2/event"
-	"github.com/google/uuid"
 	apimodels "github.com/keptn/go-utils/pkg/api/models"
 	apiutils "github.com/keptn/go-utils/pkg/api/utils"
 	keptnv2 "github.com/keptn/go-utils/pkg/lib/v0_2_0"
 	"net/url"
-	"time"
 )
 
 type CDEventHandlerRegistry struct {
-	Sink          string
+	Sink          url.URL
 	KeptnApiToken string
 	handlers      map[string]CDEventHandler
 }
 
 func (r *CDEventHandlerRegistry) AddHandler(eventType string, handler CDEventHandler) {
-	handler.SetSink(r.Sink)
-	handler.SetKeptnApiToken(r.KeptnApiToken)
 	if r.handlers == nil {
 		r.handlers = make(map[string]CDEventHandler)
 	}
@@ -31,38 +27,42 @@ func (r *CDEventHandlerRegistry) AddHandler(eventType string, handler CDEventHan
 
 func (r *CDEventHandlerRegistry) HandleEvent(e *event.Event) {
 	if r.handlers[e.Type()] == nil {
-		fmt.Println("No Handlers for type: " + e.Type())
+		fmt.Println("no Handlers for type: " + e.Type())
 	} else {
-		r.handlers[e.Type()].HandleCDEvent(e)
+		keptnEvent, err := r.handlers[e.Type()].HandleCDEvent(e)
+		if err != nil {
+			// if something goes wrong we won't handle this
+			fmt.Printf("failed to build cloud event. %s", err.Error())
+			return
+		}
+		handleKeptnEvnt(keptnEvent, r.Sink, r.KeptnApiToken)
+	}
+}
+
+func handleKeptnEvnt(keptnEvent apimodels.KeptnContextExtendedCE, sink url.URL, token string) {
+	fmt.Printf("Emitting an Event: %T to Sink: %s", keptnEvent, sink)
+	// Set a target.
+
+	apiHandler := apiutils.NewAuthenticatedAPIHandler(sink.String(), token, "x-token", nil, sink.Scheme)
+	fmt.Printf("apiHandler: %q \n", apiHandler)
+
+	eventContext, err := apiHandler.SendEvent(keptnEvent)
+	if err != nil {
+		fmt.Errorf("sending keptn event was unsuccessful. %s", *err.Message)
+		return
+	}
+	if eventContext != nil {
+		fmt.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
 	}
 }
 
 type CDEventHandler interface {
-	HandleCDEvent(e *event.Event)
-	SetSink(sink string)
-	SetKeptnApiToken(keptnApiToken string)
+	HandleCDEvent(e *cloudevents.Event) (apimodels.KeptnContextExtendedCE, error)
 }
 
-type GenericHandler func(e *event.Event)
+type ArtifactPackagedEventHandler struct{}
 
-func (h GenericHandler) HandleCDEvent(e *event.Event) {
-	h(e)
-}
-
-type ArtifactPackagedEventHandler struct {
-	Sink         string
-	KetnApiToken string
-}
-
-func (n *ArtifactPackagedEventHandler) SetSink(sink string) {
-	n.Sink = sink
-}
-
-func (n *ArtifactPackagedEventHandler) SetKeptnApiToken(apiToken string) {
-	n.KetnApiToken = apiToken
-}
-
-func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
+func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) (apimodels.KeptnContextExtendedCE, error) {
 	artifactExtension := cdeextensions.ArtifactExtension{}
 	e.ExtensionAs(cdeextensions.ArtifactIdExtension, &artifactExtension.ArtifactId)
 	e.ExtensionAs(cdeextensions.ArtifactNameExtension, &artifactExtension.ArtifactName)
@@ -70,7 +70,7 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
 
 	deploymentEvent := keptnv2.DeploymentTriggeredEventData{
 		EventData: keptnv2.EventData{
-			Project: "fmtok8s",
+			Project: "cde",
 			Stage:   "production",
 			Service: artifactExtension.ArtifactName,
 		},
@@ -81,42 +81,74 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) {
 		},
 	}
 
-	newEvent := cloudevents.NewEvent()
-	newUUID, _ := uuid.NewUUID()
-	newEvent.SetID(newUUID.String())
-	newEvent.SetTime(time.Now())
-	newEvent.SetSource("keptn-cdf-translator")
-	newEvent.SetDataContentType(cloudevents.ApplicationJSON)
-	newEvent.SetType("sh.keptn.event.production.delivery.triggered")
-	newEvent.SetData(cloudevents.ApplicationJSON, deploymentEvent)
+	// newEvent is a KeptnContextExtendedCE
+	return keptnv2.KeptnEvent(
+		keptnv2.GetTriggeredEventType("production.delivery"),
+		"keptn-cdf-translator",
+		deploymentEvent).Build()
+}
 
-	fmt.Printf("Emitting an Event: %s to Sink: %s", newEvent, n.Sink)
-	// Set a target.
+type ServiceDeployedEventHandler struct {}
 
-	eventByte, err := newEvent.MarshalJSON()
-	if err != nil {
-		fmt.Errorf("Failed to marshal cloud event. %s", err.Error())
-	}
-	fmt.Println("> Cloud Event in JSON: " + string(eventByte))
+func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) (apimodels.KeptnContextExtendedCE, error) {
+	serviceExtension := cdeextensions.ServiceExtension{}
+	e.ExtensionAs(cdeextensions.ServiceEnvIdExtension, &serviceExtension.ServiceEnvId)
+	e.ExtensionAs(cdeextensions.ServiceNameExtension, &serviceExtension.ServiceName)
+	e.ExtensionAs(cdeextensions.ServiceVersionExtension, &serviceExtension.ServiceVersion)
+	targetURL := fmt.Sprintf("http://localhost/%s/", serviceExtension.ServiceName)
 
-	apiEvent := apimodels.KeptnContextExtendedCE{}
-	err = json.Unmarshal(eventByte, &apiEvent)
-	if err != nil {
-		fmt.Errorf("Failed to map cloud event to API event model. %v", err)
+	// Service name is mandatory
+	if serviceExtension.ServiceName == "" {
+		fmt.Printf("No service name found in event %s, using \"poc\"", *e)
 	}
 
-	fmt.Printf("apiEvent: %q \n", apiEvent)
-	endPoint, _ := url.Parse(n.Sink)
-
-	apiHandler := apiutils.NewAuthenticatedAPIHandler(endPoint.String(), n.KetnApiToken, "x-token", nil, endPoint.Scheme)
-	fmt.Printf("apiHandler: %q \n", apiHandler)
-
-	eventContext, err2 := apiHandler.SendEvent(apiEvent)
-	if err2 != nil {
-		fmt.Errorf("trigger delivery was unsuccessful. %s", *err2.Message)
-		return
+	// Build the keptn event data
+	deploymentEvent := keptnv2.DeploymentFinishedEventData{
+		EventData: keptnv2.EventData{
+			Project: "cde",
+			Stage:   "production",
+			Service: serviceExtension.ServiceName,
+		},
+		Deployment: keptnv2.DeploymentFinishedData{
+			DeploymentStrategy: "user_managed",
+			DeploymentURIsLocal: []string{ targetURL },
+			DeploymentURIsPublic: []string{ targetURL },
+			DeploymentNames: []string{ serviceExtension.ServiceName },
+			GitCommit: "main",
+		},
 	}
-	if eventContext != nil {
-		fmt.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
+
+	// Build the keptn event context
+	keptnEventContext := keptnv2.KeptnEvent(
+		keptnv2.GetFinishedEventType("production.deployment"),
+		"keptn-cdf-translator",
+		deploymentEvent)
+
+	// Extract trigger id and context from the data
+	type tektonResult struct {
+		Name  string  `json:"name"`
+		Value string  `json:"value"`
 	}
+	type tektonPipelineRun struct {
+		Status struct {
+			PipelineResults []tektonResult `json:"pipelineResults"`
+		} `json:"status"`
+	}
+	var data map[string]interface{}
+	json.Unmarshal(e.Data(), &data)
+	if pr, ok := data["pipelineRun"]; ok {
+		tpr := pr.(tektonPipelineRun)
+		for _, v := range tpr.Status.PipelineResults {
+			switch v.Name {
+			case "sh.keptn.context":
+				keptnEventContext = keptnEventContext.WithKeptnContext(v.Value)
+			case "sh.keptn.trigger.id":
+				keptnEventContext = keptnEventContext.WithTriggeredID(v.Value)
+			}
+		}
+	}
+
+	fmt.Printf("Deployment Event Context %T", keptnEventContext)
+
+	return keptnEventContext.Build()
 }
