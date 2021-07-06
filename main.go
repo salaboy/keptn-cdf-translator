@@ -37,9 +37,10 @@ func main() {
 	registry.Sink = *keptnEndpoint
 	registry.KeptnApiToken = KEPTN_API_TOKEN
 
-	artifactHandler := handlers.ArtifactPackagedEventHandler{}
-	registry.AddHandler(events.ArtifactPackagedEventV1.String(), &artifactHandler)
-
+	artifactPackagedtHandler := handlers.ArtifactPackagedEventHandler{}
+	registry.AddHandler(events.ArtifactPackagedEventV1.String(), &artifactPackagedtHandler)
+	artifactPublishedHandler := handlers.ArtifactPublishedEventHandler{}
+	registry.AddHandler(events.ArtifactPublishedEventV1.String(), &artifactPublishedHandler)
 	serviceHandler := handlers.ServiceDeployedEventHandler{}
 	registry.AddHandler(events.ServiceDeployedEventV1.String(), &serviceHandler)
 
