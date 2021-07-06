@@ -31,8 +31,9 @@ func (r *CDEventHandlerRegistry) HandleEvent(e *event.Event) {
 	} else {
 		keptnEventBuilders := r.handlers[e.Type()].HandleCDEvent(e)
 		keptnContext := ""
+		keptnTriggerId := ""
 		for _, keptnEventBuilder := range keptnEventBuilders {
-			keptnEventBuilderWithContext := keptnEventBuilder.WithKeptnContext(keptnContext)
+			keptnEventBuilderWithContext := keptnEventBuilder.WithKeptnContext(keptnContext).WithTriggeredID(keptnTriggerId)
 			keptnEvent, err := keptnEventBuilderWithContext.Build()
 			if err != nil {
 				// if something goes wrong we won't handle this
@@ -40,12 +41,14 @@ func (r *CDEventHandlerRegistry) HandleEvent(e *event.Event) {
 				return
 			}
 			// Store the context in case that we send more than one event
-			keptnContext = handleKeptnEvnt(keptnEvent, r.Sink, r.KeptnApiToken)
+			eventContext := handleKeptnEvent(keptnEvent, r.Sink, r.KeptnApiToken)
+			keptnContext = *eventContext.KeptnContext
+			keptnTriggerId = *eventContext.KeptnContext
 		}
 	}
 }
 
-func handleKeptnEvnt(keptnEvent apimodels.KeptnContextExtendedCE, sink url.URL, token string) string {
+func handleKeptnEvent(keptnEvent apimodels.KeptnContextExtendedCE, sink url.URL, token string) *apimodels.EventContext {
 	fmt.Printf("Emitting an Event: %T to Sink: %s", keptnEvent, sink)
 	// Set a target.
 
@@ -55,13 +58,13 @@ func handleKeptnEvnt(keptnEvent apimodels.KeptnContextExtendedCE, sink url.URL, 
 	eventContext, err := apiHandler.SendEvent(keptnEvent)
 	if err != nil {
 		fmt.Errorf("sending keptn event was unsuccessful. %s", *err.Message)
-		return ""
+		return nil
 	}
 	if eventContext != nil {
 		fmt.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
-		return *eventContext.KeptnContext
+		return eventContext
 	}
-	return ""
+	return nil
 }
 
 type CDEventHandler interface {
@@ -71,7 +74,6 @@ type CDEventHandler interface {
 type ArtifactPackagedEventHandler struct{}
 
 // HandleCDEvent for ArtifactPackagedEventHandler sends a DeploymentTriggered event
-// as well as DeploymentStarted event
 func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.KeptnEventBuilder {
 	artifactExtension := cdeextensions.ArtifactExtension{}
 	e.ExtensionAs(cdeextensions.ArtifactIdExtension, &artifactExtension.ArtifactId)
@@ -98,15 +100,7 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.
 		"keptn-cdf-translator",
 		deploymentTriggeredData)
 
-	deploymentStartedData := keptnv2.DeploymentStartedEventData{
-		EventData: eventData,
-	}
-	deploymentStarted := keptnv2.KeptnEvent(
-		keptnv2.GetTriggeredEventType("production.delivery"),
-		"keptn-cdf-translator",
-		deploymentStartedData)
-
-	return []*keptnv2.KeptnEventBuilder{deploymentTriggered, deploymentStarted}
+	return []*keptnv2.KeptnEventBuilder{deploymentTriggered}
 }
 
 type ServiceDeployedEventHandler struct {}
@@ -131,7 +125,7 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 			Service: serviceExtension.ServiceName,
 		},
 		Deployment: keptnv2.DeploymentFinishedData{
-			DeploymentStrategy: "user_managed",
+			DeploymentStrategy: "direct",
 			DeploymentURIsLocal: []string{ targetURL },
 			DeploymentURIsPublic: []string{ targetURL },
 			DeploymentNames: []string{ serviceExtension.ServiceName },
@@ -171,4 +165,42 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 
 	fmt.Printf("Deployment Event Context %T", keptnEventContext)
 	return []*keptnv2.KeptnEventBuilder{keptnEventContext}
+}
+
+type ArtifactPublishedEventHandler struct{}
+
+// HandleCDEvent for ArtifactPublishedEventHandler sends a DeploymentStarted event
+func (n *ArtifactPublishedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.KeptnEventBuilder {
+	artifactExtension := cdeextensions.ArtifactExtension{}
+	e.ExtensionAs(cdeextensions.ArtifactIdExtension, &artifactExtension.ArtifactId)
+	e.ExtensionAs(cdeextensions.ArtifactNameExtension, &artifactExtension.ArtifactName)
+	e.ExtensionAs(cdeextensions.ArtifactVersionExtension, &artifactExtension.ArtifactVersion)
+
+	eventData := keptnv2.EventData{
+		Project: "cde",
+		Stage:   "production",
+		Service: artifactExtension.ArtifactName,
+		Message: "deployment handled by Tekton",
+	}
+
+	deploymentStartedData := keptnv2.DeploymentStartedEventData{
+		EventData: eventData,
+	}
+	deploymentStarted := keptnv2.KeptnEvent(
+		keptnv2.GetTriggeredEventType("production.delivery"),
+		"keptn-cdf-translator",
+		deploymentStartedData)
+
+	var data map[string]interface{}
+	json.Unmarshal(e.Data(), &data)
+	if ctx, ok := data["shkeptncontext"]; ok {
+		deploymentStarted = deploymentStarted.WithKeptnContext(ctx.(string))
+	}
+	if triggerid, ok := data["triggerid"]; ok {
+		deploymentStarted = deploymentStarted.WithTriggeredID(triggerid.(string))
+	}
+
+	fmt.Printf("Deployment Event Context %T", deploymentStarted)
+
+	return []*keptnv2.KeptnEventBuilder{deploymentStarted}
 }
