@@ -35,6 +35,14 @@ func (r *CDEventHandlerRegistry) HandleEvent(e *event.Event) {
 		keptnContext := ""
 		keptnTriggerId := ""
 		for _, keptnEventBuilder := range keptnEventBuilders {
+			// For the first event, context and trigger ID will empty
+			// If so, check if the builder includes them, if so don't override them
+			if keptnContext == "" {
+				keptnContext = keptnEventBuilder.Shkeptncontext
+			}
+			if keptnTriggerId == "" {
+				keptnTriggerId = keptnEventBuilder.Triggeredid
+			}
 			keptnEventBuilderWithContext := keptnEventBuilder.WithKeptnContext(keptnContext).WithTriggeredID(keptnTriggerId)
 			keptnEvent, err := keptnEventBuilderWithContext.Build()
 			if err != nil {
@@ -59,11 +67,11 @@ func handleKeptnEvent(keptnEvent apimodels.KeptnContextExtendedCE, sink url.URL,
 
 	eventContext, err := apiHandler.SendEvent(keptnEvent)
 	if err != nil {
-		log.Errorf("sending keptn event was unsuccessful. %s", *err.Message)
+		log.Printf("sending keptn event was unsuccessful. %s", *err.Message)
 		return nil
 	}
 	if eventContext != nil {
-		log.Println("I should store this context somewhere: " + *eventContext.KeptnContext)
+		log.Println("Got Keptn context: %s", *eventContext.KeptnContext)
 		return eventContext
 	}
 	return nil
@@ -116,15 +124,18 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 
 	// Service name is mandatory
 	if serviceExtension.ServiceName == "" {
-		log.Printf("No service name found in event %s, using \"poc\"\n", *e)
+		log.Printf("no service name found in event %s, using \"poc\"\n", *e)
 	}
 
 	// Build the keptn event data
+	// Hardcode passed result for now. We could read it from the PipelineRun
 	deploymentEvent := keptnv2.DeploymentFinishedEventData{
 		EventData: keptnv2.EventData{
 			Project: "cde",
 			Stage:   "production",
 			Service: serviceExtension.ServiceName,
+			Status: keptnv2.StatusSucceeded,
+			Result: keptnv2.ResultPass,
 		},
 		Deployment: keptnv2.DeploymentFinishedData{
 			DeploymentStrategy: "direct",
@@ -137,7 +148,7 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 
 	// Build the keptn event context
 	keptnEventContext := keptnv2.KeptnEvent(
-		keptnv2.GetFinishedEventType("production.deployment"),
+		keptnv2.GetFinishedEventType("deployment"),
 		"keptn-cdf-translator",
 		deploymentEvent)
 
@@ -153,14 +164,18 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 	}
 	var data map[string]interface{}
 	json.Unmarshal(e.Data(), &data)
-	if pr, ok := data["pipelineRun"]; ok {
-		tpr := pr.(tektonPipelineRun)
+	if pr, ok := data["pipelinerun"]; ok {
+		var tpr tektonPipelineRun
+		json.Unmarshal([]byte(pr.(string)), &tpr)
+		log.Printf("tpr status: %s\n", tpr.Status)
 		for _, v := range tpr.Status.PipelineResults {
 			switch v.Name {
 			case "sh.keptn.context":
 				keptnEventContext.WithKeptnContext(v.Value)
+				log.Printf("received context: %s\n", v.Value)
 			case "sh.keptn.trigger.id":
 				keptnEventContext.WithTriggeredID(v.Value)
+				log.Printf("received trigger id: %s\n", v.Value)
 			}
 		}
 	}
