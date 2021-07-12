@@ -120,7 +120,7 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 	e.ExtensionAs(cdeextensions.ServiceEnvIdExtension, &serviceExtension.ServiceEnvId)
 	e.ExtensionAs(cdeextensions.ServiceNameExtension, &serviceExtension.ServiceName)
 	e.ExtensionAs(cdeextensions.ServiceVersionExtension, &serviceExtension.ServiceVersion)
-	targetURL := fmt.Sprintf("http://localhost/%s/", serviceExtension.ServiceName)
+	targetURL := fmt.Sprintf("http://%s-127.0.0.1.nip.io", serviceExtension.ServiceName)
 
 	// Service name is mandatory
 	if serviceExtension.ServiceName == "" {
