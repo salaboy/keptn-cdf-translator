@@ -94,7 +94,7 @@ func (n *ArtifactPackagedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.
 		Project: "cde",
 		Stage:   "production",
 		Service: artifactExtension.ArtifactName,
-		Message: "deployment handled by Tekton",
+		Message: "deployment handled by Tekton/Spinnaker",
 	}
 
 	deploymentTriggeredData := keptnv2.DeploymentTriggeredEventData{
@@ -164,6 +164,14 @@ func (n *ServiceDeployedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2.K
 	}
 	var data map[string]interface{}
 	json.Unmarshal(e.Data(), &data)
+	if ctx, ok := data["contextId"]; ok {
+                keptnEventContext.WithKeptnContext(ctx.(string))
+                log.Printf("received context ID %s\n", ctx.(string))
+        }
+        if triggerid, ok := data["triggerId"]; ok {
+                keptnEventContext.WithTriggeredID(triggerid.(string))
+                log.Printf("received trigger ID %s\n", triggerid.(string))
+        }
 	if pr, ok := data["pipelinerun"]; ok {
 		var tpr tektonPipelineRun
 		json.Unmarshal([]byte(pr.(string)), &tpr)
@@ -197,7 +205,7 @@ func (n *ArtifactPublishedEventHandler) HandleCDEvent(e *event.Event) []*keptnv2
 		Project: "cde",
 		Stage:   "production",
 		Service: artifactExtension.ArtifactName,
-		Message: "deployment handled by Tekton",
+		Message: "deployment handled by Tekton/Spinnaker",
 		Status:  keptnv2.StatusUnknown,
 	}
 
